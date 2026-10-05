@@ -215,16 +215,21 @@ body { font-family: 'Kanit', sans-serif; background-color: #f4f7f6; }
 
 <!-- 2.2 ตรวจสอบประวัติสลิป -->
 <div class="tab-pane fade" id="manageRecords">
-<div class="mb-3 d-flex justify-content-end align-items-center">
-<label class="me-2 fw-bold text-secondary">แยกตามรายการ :</label>
-<select id="filterPaymentType" class="form-select w-auto" onchange="renderRecordsTable()">
-<option value="all">-- แสดงทั้งหมด --</option>
-</select>
+<div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+    <div>
+        <button class="btn btn-danger" onclick="bulkDeleteRecords()"><i class="fa-solid fa-trash-can"></i> ลบข้อมูลตามรายการที่เลือก</button>
+    </div>
+    <div class="d-flex align-items-center">
+        <label class="me-2 fw-bold text-secondary text-nowrap">แยกตามรายการ :</label>
+        <select id="filterPaymentType" class="form-select w-auto" onchange="renderRecordsTable()">
+            <option value="all">-- แสดงทั้งหมด --</option>
+        </select>
+    </div>
 </div>
 <div class="table-responsive bg-white rounded shadow-sm border" style="overflow-x: visible;">
 <table class="table table-bordered table-hover align-middle mb-0">
 <thead class="table-light">
-<tr><th>เวลา</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>รายการ</th><th>สลิป</th></tr>
+<tr><th>เวลา</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>รายการ</th><th>สลิป</th><th class="text-center">จัดการ</th></tr>
 </thead>
 <tbody id="recordsTableBody"></tbody>
 </table>
@@ -252,6 +257,7 @@ body { font-family: 'Kanit', sans-serif; background-color: #f4f7f6; }
 // ==========================================
 const SUPABASE_URL = 'https://bshkcwlrbydhldmzbzhz.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_7vXTZvvzE3amITC8brMTnA_UP45CdGi';
+
 
 // สร้าง Client สำหรับคุยกับฐานข้อมูล Supabase
 const { createClient } = supabase;
@@ -598,14 +604,14 @@ function importExcel(e) {
     e.target.value = ''; 
 }
 
-// ----- ตรวจสอบสลิป -----
+// ----- ตรวจสอบสลิป & ลบข้อมูล -----
 function formatDateToTH(isoString) {
     const d = new Date(isoString);
     return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
 }
 
 async function loadRecords() {
-    document.getElementById('recordsTableBody').innerHTML = '<tr><td colspan="5" class="text-center">กำลังโหลดข้อมูล...</td></tr>';
+    document.getElementById('recordsTableBody').innerHTML = '<tr><td colspan="6" class="text-center">กำลังโหลดข้อมูล...</td></tr>';
     try {
         const { data, error } = await supabaseClient.from('payments').select('*').order('created_at', { ascending: false });
         if(error) throw error;
@@ -618,7 +624,7 @@ async function loadRecords() {
         
         renderRecordsTable();
     } catch(err) {
-        document.getElementById('recordsTableBody').innerHTML = `<tr><td colspan="5" class="text-center text-danger">${err.message}</td></tr>`;
+        document.getElementById('recordsTableBody').innerHTML = `<tr><td colspan="6" class="text-center text-danger">${err.message}</td></tr>`;
     }
 }
 
@@ -628,7 +634,7 @@ function renderRecordsTable() {
     let filteredData = (filterVal === 'all') ? allRecordsData : allRecordsData.filter(row => row.payment_type === filterVal);
     
     if (filteredData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">ไม่พบประวัติการโอนเงิน</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">ไม่พบประวัติการโอนเงิน</td></tr>';
         return;
     }
     
@@ -645,16 +651,75 @@ function renderRecordsTable() {
             </div>
         ` : '-';
 
-        html += `<tr>
+        html += `<tr style="page-break-inside: avoid;">
             <td class="text-nowrap small">${formatDateToTH(row.created_at)}</td>
             <td>${row.student_id}</td>
             <td>${row.student_name}</td>
             <td><span class="badge bg-secondary">${row.payment_type}</span></td>
             <td>${link}</td>
+            <td class="text-center">
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteRecord('${row.id}')" title="ลบข้อมูลนี้"><i class="fa-solid fa-trash"></i></button>
+            </td>
         </tr>`;
     });
     tbody.innerHTML = html;
 }
+
+// 1. ลบข้อมูลรายบุคคล (ประวัติการชำระเงิน)
+async function deleteRecord(id) {
+    Swal.fire({
+        title: 'ยืนยันการลบ?',
+        text: "ต้องการลบประวัติการชำระเงินรายการนี้ใช่หรือไม่? (ไฟล์สลิปจะไม่ถูกลบออกจาก Storage อัตโนมัติ)",
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'ใช่, ลบเลย', cancelButtonText: 'ยกเลิก'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            try {
+                const { error } = await supabaseClient.from('payments').delete().eq('id', id);
+                if(error) throw error;
+                Swal.fire('ลบแล้ว!', 'ลบประวัติการชำระเงินเรียบร้อย', 'success'); 
+                await loadPublicInitialData();
+                loadRecords(); 
+            } catch(err) {
+                Swal.fire('ข้อผิดพลาด', err.message, 'error');
+            }
+        }
+    });
+}
+
+// 2. ลบข้อมูลทั้งหมด หรือตามประเภท
+async function bulkDeleteRecords() {
+    const filterVal = document.getElementById('filterPaymentType').value;
+    const typeLabel = filterVal === 'all' ? 'ประวัติทั้งหมด' : `เฉพาะรายการ "${filterVal}"`;
+    
+    Swal.fire({
+        title: `ยืนยันลบข้อมูล ${typeLabel}?`,
+        text: `คุณกำลังจะลบประวัติการชำระเงิน ${typeLabel} ข้อมูลที่ถูกลบจะไม่สามารถกู้คืนได้!`,
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'ใช่, ลบทิ้งเลย', cancelButtonText: 'ยกเลิก'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            try {
+                Swal.fire({ title: 'กำลังลบข้อมูล...', didOpen: () => Swal.showLoading() });
+                
+                let query = supabaseClient.from('payments').delete();
+                if (filterVal === 'all') {
+                    query = query.gt('id', 0); // ลบทั้งหมดที่มี id > 0
+                } else {
+                    query = query.eq('payment_type', filterVal);
+                }
+                
+                const { error } = await query;
+                if(error) throw error;
+                
+                Swal.fire('ลบแล้ว!', `ข้อมูล ${typeLabel} ถูกลบเรียบร้อย`, 'success'); 
+                await loadPublicInitialData();
+                loadRecords(); 
+            } catch(err) {
+                Swal.fire('ข้อผิดพลาด', err.message, 'error');
+            }
+        }
+    });
+}
+
 
 // ----- ตั้งค่ารายการชำระเงิน -----
 async function loadTypesAdmin() {
@@ -745,30 +810,31 @@ function exportPDFReport() {
         let statusColor = hasPaid ? '#198754' : '#dc3545';
         
         trHtml += `
-            <tr>
+            <tr style="page-break-inside: avoid;">
                 <td style="border: 1px solid black; padding: 6px; text-align: center;">${index + 1}</td>
                 <td style="border: 1px solid black; padding: 6px; text-align: center;">${student.id}</td>
                 <td style="border: 1px solid black; padding: 6px;">${student.name}</td>
-                <td style="border: 1px solid black; padding: 6px; text-align: center; color: ${statusColor};">${statusText}</td>
+                <td style="border: 1px solid black; padding: 6px; text-align: center; color: ${statusColor}; font-weight: 500;">${statusText}</td>
             </tr>
         `;
     });
     
     const printDiv = document.createElement('div');
+    // ปรับเปลี่ยน CSS ให้พอดีกับหน้ากระดาษ A4 โดยการใช้ Width: 100% แทนการกำหนด Pixel ตายตัว
     printDiv.innerHTML = `
-        <div style="font-family: 'Sarabun', sans-serif; padding: 40px; background: white; color: black; width: 800px;">
-            <div style="text-align: center; margin-bottom: 25px;">
-                <h2 style="font-weight: 600; font-size: 26px; margin-bottom: 10px;">รายงานสรุปสถานะการชำระเงิน</h2>
-                <p style="font-size: 18px; margin: 0;">รายการ: ${typeLabel}</p>
+        <div style="font-family: 'Sarabun', sans-serif; background: white; color: black; width: 100%;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h2 style="font-weight: 600; font-size: 24px; margin-bottom: 5px;">รายงานสรุปสถานะการชำระเงิน</h2>
+                <p style="font-size: 16px; margin: 0;">รายการ: ${typeLabel}</p>
             </div>
             
-            <table style="width: 100%; border-collapse: collapse; font-size: 16px; margin-bottom: 25px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 15px; margin-bottom: 20px;">
                 <thead>
-                    <tr style="background-color: #f2f2f2;">
-                        <th style="border: 1px solid black; padding: 10px; text-align: center; width: 10%;">ลำดับ</th>
-                        <th style="border: 1px solid black; padding: 10px; text-align: center; width: 25%;">รหัสนักศึกษา</th>
-                        <th style="border: 1px solid black; padding: 10px; text-align: center; width: 45%;">ชื่อ-สกุล</th>
-                        <th style="border: 1px solid black; padding: 10px; text-align: center; width: 20%;">สถานะ</th>
+                    <tr style="background-color: #f2f2f2; page-break-inside: avoid;">
+                        <th style="border: 1px solid black; padding: 8px; text-align: center; width: 10%;">ลำดับ</th>
+                        <th style="border: 1px solid black; padding: 8px; text-align: center; width: 25%;">รหัสนักศึกษา</th>
+                        <th style="border: 1px solid black; padding: 8px; text-align: center; width: 45%;">ชื่อ-สกุล</th>
+                        <th style="border: 1px solid black; padding: 8px; text-align: center; width: 20%;">สถานะ</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -776,13 +842,13 @@ function exportPDFReport() {
                 </tbody>
             </table>
             
-            <div style="margin-bottom: 25px; font-size: 16px;">
+            <div style="margin-bottom: 20px; font-size: 15px; page-break-inside: avoid;">
                 <strong>สรุปภาพรวม:</strong> ทั้งหมด ${dashboardData.students.length} คน &nbsp;&nbsp;|&nbsp;&nbsp;
                 <span style="color: #198754;">ชำระแล้ว ${paid} คน</span> &nbsp;&nbsp;|&nbsp;&nbsp;
                 <span style="color: #dc3545;">ค้างชำระ ${unpaid} คน</span>
             </div>
             
-            <div style="margin-top: 60px; text-align: right; font-size: 16px;">
+            <div style="margin-top: 40px; text-align: right; font-size: 15px; page-break-inside: avoid;">
                 <p style="margin: 0 0 10px 0;">ลงชื่อ.......................................................</p>
                 <p style="margin: 0 0 10px 0; padding-right: 40px;">(ผู้รับรองรายงาน)</p>
                 <p style="margin: 0;">วันที่ ${new Date().toLocaleDateString('th-TH')}</p>
@@ -790,7 +856,16 @@ function exportPDFReport() {
         </div>
     `;
     
-    var opt = { margin: [0.5, 0.5, 0.5, 0.5], filename: 'Payment_Report.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'in', format: 'A4', orientation: 'portrait' } };
+    // ตั้งค่าระยะขอบให้ได้สัดส่วน A4 พอดี
+    var opt = { 
+        margin: [15, 12, 15, 12], // mm [บน, ขวา, ล่าง, ซ้าย]
+        filename: 'Payment_Report.pdf', 
+        image: { type: 'jpeg', quality: 0.98 }, 
+        html2canvas: { scale: 2 }, 
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] }
+    };
+    
     html2pdf().set(opt).from(printDiv).save().then(() => { Swal.close(); });
 }
 </script>
