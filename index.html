@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ระบบบันทึกข้อมูลชำระเงิน</title>
+<!-- Bootstrap & SweetAlert -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<!-- Chart.js, SheetJS, html2pdf -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<!-- Supabase SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&family=Sarabun:wght@300;400;500;600&display=swap');
+body { font-family: 'Kanit', sans-serif; background-color: #f4f7f6; }
+.nav-tabs .nav-link { color: #555; font-weight: 500; }
+.nav-tabs .nav-link.active { color: #0d6efd; font-weight: bold; border-bottom: 3px solid #0d6efd; }
+.card { border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: none; }
+.required { color: red; }
+.upload-btn-wrapper { position: relative; overflow: hidden; display: inline-block; }
+.upload-btn-wrapper input[type=file] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; }
+.btn-light-blue { background-color: #aed6f1; color: #154360; font-weight: 500; }
+.btn-light-blue:hover { background-color: #85c1e9; }
+.dash-card { transition: transform 0.2s; border-radius: 15px; border: none; }
+.dash-card:hover { transform: translateY(-5px); }
+.bg-gradient-primary { background: linear-gradient(45deg, #4e73df, #224abe); color: white; }
+.bg-gradient-success { background: linear-gradient(45deg, #1cc88a, #13855c); color: white; }
+.bg-gradient-danger { background: linear-gradient(45deg, #e74a3b, #be2617); color: white; }
+.badge-status { font-size: 0.9rem; padding: 0.4rem 0.8rem; border-radius: 20px; }
+.slip-wrapper { position: relative; display: inline-block; }
+.slip-thumb { width: 45px; height: 45px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc; cursor: pointer; background-color: #f8f9fa; }
+.slip-wrapper .slip-large { visibility: hidden; opacity: 0; position: absolute; bottom: 20px; right: 60px; width: 250px; height: auto; border: 3px solid #0d6efd; border-radius: 8px; background-color: white; padding: 2px; box-shadow: 0 5px 20px rgba(0,0,0,0.3); transition: opacity 0.2s, visibility 0.2s; z-index: 1050; pointer-events: none; }
+.slip-wrapper:hover .slip-large { visibility: visible; opacity: 1; }
+</style>
+</head>
+<body>
+<div class="container py-4">
+<h3 class="text-center text-primary mb-4 fw-bold">ระบบชำระเงินนักศึกษา (GitHub Pages + Supabase)</h3>
+<div class="card p-3 p-md-4">
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-4" id="mainTab" role="tablist">
+<li class="nav-item">
+<button class="nav-link active" id="form-tab" data-bs-toggle="tab" data-bs-target="#formSection">บันทึกข้อมูลชำระเงิน</button>
+</li>
+<li class="nav-item">
+<button class="nav-link" id="admin-tab" data-bs-toggle="tab" data-bs-target="#adminSection">ผู้ดูแลระบบ</button>
+</li>
+</ul>
+<div class="tab-content">
+<!-- Section 1: Form & Chart (หน้าแรก) -->
+<div class="tab-pane fade show active" id="formSection">
+<div class="row g-4 align-items-stretch">
+<!-- ซ้าย : ฟอร์มกรอกข้อมูล -->
+<div class="col-lg-6">
+<div class="border rounded bg-white shadow-sm p-4 h-100">
+<h5 class="fw-bold text-primary mb-4"><i class="fa-solid fa-pen-to-square"></i> กรอกข้อมูลชำระเงิน</h5>
+<form id="paymentForm" onsubmit="handleFormSubmit(event)">
+<div class="mb-3">
+<label class="form-label fw-bold">รหัสประจำตัว <span class="required">*</span></label>
+<select class="form-select" id="studentId" required onchange="autoFillName()">
+<option value="">-- เลือกรหัสประจำตัว --</option>
+</select>
+</div>
+<div class="mb-3">
+<label class="form-label fw-bold">ชื่อ-สกุล</label>
+<input type="text" class="form-control bg-light" id="studentName" readonly placeholder="จะแสดงอัตโนมัติ" >
+</div>
+<div class="mb-3">
+<label class="form-label fw-bold">รายการที่ชำระ <span class="required">*</span></label>
+<select class="form-select" id="paymentType" required>
+<option value="">-- เลือกรายการ --</option>
+</select>
+</div>
+<div class="mb-4">
+<label class="form-label fw-bold d-block">สลิปโอนเงิน <span class="required">*</span></label>
+<div class="upload-btn-wrapper">
+<button type="button" class="btn btn-light-blue"><i class="fa-solid fa-image"></i> เลือกไฟล์รูปภาพ</button>
+<input type="file" id="slipFile" accept=".jpg, .jpeg, .png" required onchange="previewFileName()">
+</div>
+<div id="fileNameDisplay" class="mt-2 text-success fw-bold"></div>
+</div>
+<button type="submit" class="btn btn-primary w-100 py-2 fs-5 rounded-3" id="submitBtn">บันทึกข้อมูล</button>
+</form>
+</div>
+</div>
+<!-- ขวา: กราฟสรุป (หน้าแรก) -->
+<div class="col-lg-6">
+<div class="border rounded bg-white shadow-sm p-4 h-100 d-flex flex-column align-items-center">
+<h5 class="fw-bold text-secondary mb-3 w-100"><i class="fa-solid fa-chart-pie"></i> ภาพรวมการชำระเงิน</h5>
+<div class="w-100 mb-3">
+<select id="publicChartFilter" class="form-select border-primary bg-light" onchange="renderPublicChart()">
+<option value="all">-- โหลดข้อมูลตัวกรอง... --</option>
+</select>
+</div>
+<div style="position: relative; height: 260px; width: 100%;">
+<canvas id="publicPaymentChart"></canvas>
+</div>
+<div class="mt-4 d-flex w-100 justify-content-evenly text-center border-top pt-3">
+<div>
+<h3 class="fw-bold text-success mb-0" id="publicPaid">0</h3>
+<small class="text-muted fw-bold">ชำระแล้ว (คน) </small>
+</div>
+<div>
+<h3 class="fw-bold text-danger mb-0" id="publicUnpaid">0</h3>
+<small class="text-muted fw-bold">ค้างชำระ (คน)</small>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 2: Admin -->
+<div class="tab-pane fade" id="adminSection">
+<div id="loginArea" class="col-md-6 mx-auto mt-4">
+<h5 class="fw-bold mb-3 text-primary text-center">เข้าสู่ระบบผู้ดูแล</h5>
+<div class="input-group mb-3 shadow-sm">
+<input type="password" id="adminPass" class="form-control" placeholder="ใส่รหัสผ่าน" >
+<button class="btn btn-primary" type="button" onclick="loginAdmin()">เข้าสู่ระบบ</button>
+</div>
+</div>
+<div id="adminPanel" style="display: none;">
+<ul class="nav nav-pills mb-4 border-bottom pb-2" id="adminSubTab" role="tablist">
+<li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#dashSection" onclick="loadDashboard()"><i class="fa-solid fa-chart-line"></i> แดชบอร์ดแอดมิน</button></li>
+<li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#manageStudents" onclick="loadStudentsAdmin()"><i class="fa-solid fa-users-gear"></i> จัดการนักศึกษา</button></li>
+<li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#manageRecords" onclick="loadRecords()"><i class="fa-solid fa-list"></i> ตรวจสอบสลิป</button></li>
+<li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#manageTypes" onclick="loadTypesAdmin()"><i class="fa-solid fa-gear"></i> ตั้งค่ารายการ</button></li>
+</ul>
+<div class="tab-content">
+<!-- 2.1 แดชบอร์ดแอดมิน (ตาราง + กราฟ) -->
+<div class="tab-pane fade show active" id="dashSection">
+<div class="row mb-3 align-items-center bg-white border p-3 rounded mx-0 shadow-sm">
+<div class="col-md-6 mb-2 mb-md-0">
+<label class="fw-bold mb-1 text-secondary"><i class="fa-solid fa-filter"></i> ตัวกรองรายการ:</label>
+<select id="dashTypeFilter" class="form-select border-primary" onchange="renderAdminDashboard()">
+<option value="all">-- รวมทุกรายการ (จ่ายอย่างน้อย 1 รายการ) --</option>
+</select>
+</div>
+<div class="col-md-6 text-md-end mt-3 mt-md-0 d-flex align-items-end justify-content-md-end gap-2">
+<button class="btn btn-outline-success fw-bold" onclick="exportExcelReport()"><i class="fa-solid fa-file-excel"></i> Export Excel</button>
+<button class="btn btn-outline-danger fw-bold" onclick="exportPDFReport()"><i class="fa-solid fa-file-pdf"></i> Export PDF</button>
+</div>
+</div>
+<div class="row mb-4 align-items-stretch">
+<div class="col-lg-7 mb-3 mb-lg-0">
+<div class="row g-3 h-100">
+<div class="col-12">
+<div class="card dash-card bg-gradient-primary p-3 shadow-sm h-100 d-flex flex-row justify-content-between align-items-center">
+<div>
+<h6 class="mb-1 text-white-50"><i class="fa-solid fa-users"></i> จํานวนนักศึกษาทั้งหมด</h6>
+<h1 class="fw-bold mb-0 display-6" id="dashTotal">0</h1>
+</div>
+<i class="fa-solid fa-users fa-3x text-white-50 opacity-50"></i>
+</div>
+</div>
+<div class="col-6">
+<div class="card dash-card bg-gradient-success p-3 shadow-sm h-100 text-center">
+<h6 class="mb-1 text-white-50"><i class="fa-solid fa-check-circle"></i> ชำระแล้ว</h6>
+<h2 class="fw-bold mb-0" id="dashPaid">0</h2>
+</div>
+</div>
+<div class="col-6">
+<div class="card dash-card bg-gradient-danger p-3 shadow-sm h-100 text-center">
+<h6 class="mb-1 text-white-50"><i class="fa-solid fa-times-circle"></i> ค้างชำระ</h6>
+<h2 class="fw-bold mb-0" id="dashUnpaid">0</h2>
+</div>
+</div>
+</div>
+</div>
+<div class="col-lg-5">
+<div class="card shadow-sm h-100 p-3 d-flex flex-column align-items-center justify-content-center border-0 bg-white">
+<div style="position: relative; height: 200px; width: 100%;">
+<canvas id="adminPaymentChart"></canvas>
+</div>
+</div>
+</div>
+</div>
+<h5 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-user-check"></i> รายชื่อสถานะการชำระเงิน</h5>
+<div class="table-responsive border rounded bg-white shadow-sm">
+<table class="table table-hover align-middle mb-0">
+<thead class="table-light">
+<tr><th>รหัสนักศึกษา</th><th>ชื่อ-สกุล</th><th class="text-center">สถานะ</th></tr>
+</thead>
+<tbody id="dashTableBody"></tbody>
+</table>
+</div>
+</div>
+
+<!-- 2.1.5 จัดการนักศึกษา -->
+<div class="tab-pane fade" id="manageStudents">
+<div class="d-flex justify-content-between align-items-center mb-3">
+<h5 class="fw-bold text-secondary mb-0"><i class="fa-solid fa-user-graduate"></i> ข้อมูลนักศึกษา</h5>
+<div>
+    <button class="btn btn-success me-2" onclick="document.getElementById('excelFile').click()"><i class="fa-solid fa-file-excel"></i> Import Excel</button>
+    <input type="file" id="excelFile" accept=".xlsx, .xls, .csv" style="display: none;" onchange="importExcel(event)">
+    <button class="btn btn-primary" onclick="addStudentForm()"><i class="fa-solid fa-plus"></i> เพิ่มรายบุคคล</button>
+</div>
+</div>
+<div class="alert alert-info text-center small py-2 mb-3">
+    <i class="fa-solid fa-circle-info"></i> รูปแบบไฟล์ Excel: คอลัมน์ A (รหัสนักศึกษา), คอลัมน์ B (ชื่อ-สกุล)
+</div>
+<div class="table-responsive bg-white rounded shadow-sm border">
+<table class="table table-bordered table-hover align-middle mb-0">
+<thead class="table-light">
+<tr><th>รหัสนักศึกษา</th><th>ชื่อ-สกุล</th><th class="text-center">จัดการ</th></tr>
+</thead>
+<tbody id="adminStudentsTableBody"></tbody>
+</table>
+</div>
+</div>
+
+<!-- 2.2 ตรวจสอบประวัติสลิป -->
+<div class="tab-pane fade" id="manageRecords">
+<div class="mb-3 d-flex justify-content-end align-items-center">
+<label class="me-2 fw-bold text-secondary">แยกตามรายการ :</label>
+<select id="filterPaymentType" class="form-select w-auto" onchange="renderRecordsTable()">
+<option value="all">-- แสดงทั้งหมด --</option>
+</select>
+</div>
+<div class="table-responsive bg-white rounded shadow-sm border" style="overflow-x: visible;">
+<table class="table table-bordered table-hover align-middle mb-0">
+<thead class="table-light">
+<tr><th>เวลา</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>รายการ</th><th>สลิป</th></tr>
+</thead>
+<tbody id="recordsTableBody"></tbody>
+</table>
+</div>
+</div>
+<!-- 2.3 ตั้งค่า -->
+<div class="tab-pane fade" id="manageTypes">
+<div class="input-group mb-3 shadow-sm">
+<input type="text" id="newPaymentType" class="form-control" placeholder="ชื่อรายการ เช่น ค่าเสื้อผ้า" >
+<button class="btn btn-primary" type="button" onclick="addType()">เพิ่มรายการ</button>
+</div>
+<ul class="list-group shadow-sm" id="adminTypeList"></ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+// ==========================================
+// 1. ตั้งค่า Supabase API Key ของคุณที่นี่!
+// ==========================================
+const SUPABASE_URL = 'https://bshkcwlrbydhldmzbzhz.supabase.co/rest/v1/';
+const SUPABASE_ANON_KEY = 'sb_publishable_7vXTZvvzE3amITC8brMTnA_UP45CdGi';
+
+// สร้าง Client สำหรับคุยกับฐานข้อมูล Supabase
+const { createClient } = supabase;
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ==========================================
+let dashboardData = { students: [], records: [], types: [] };
+let allRecordsData = [];
+let publicChartInstance = null;
+let adminChartInstance = null;
+
+document.addEventListener("DOMContentLoaded", () => {
+    // Check if keys are empty
+    if(SUPABASE_URL.includes('YOUR_SUPABASE')) {
+        Swal.fire('แจ้งเตือน', 'กรุณาใส่ Supabase URL และ Key ในโค้ดก่อนใช้งาน', 'warning');
+    } else {
+        loadPublicInitialData();
+    }
+});
+
+// โหลดข้อมูลหน้าแรก
+async function loadPublicInitialData() {
+    try {
+        const [ {data: st}, {data: pt}, {data: rec} ] = await Promise.all([
+            supabaseClient.from('students').select('*').order('id'),
+            supabaseClient.from('payment_types').select('type_name'),
+            supabaseClient.from('payments').select('student_id, payment_type')
+        ]);
+        
+        dashboardData.students = st || [];
+        dashboardData.types = (pt || []).map(p => p.type_name);
+        // แปลง key ให้ตรงกับโค้ดเดิม
+        dashboardData.records = (rec || []).map(r => ({id: r.student_id, type: r.payment_type}));
+
+        initPage();
+    } catch(err) {
+        console.error(err);
+    }
+}
+
+function initPage() {
+    const studentSelect = document.getElementById('studentId');
+    studentSelect.innerHTML = '<option value="">-- เลือกรหัสประจำตัว --</option>';
+    dashboardData.students.forEach(s => { 
+        studentSelect.innerHTML += `<option value="${s.id}">${s.id}</option>`; 
+    });
+    updatePaymentDropdowns(dashboardData.types);
+    renderPublicChart();
+}
+
+function updatePaymentDropdowns(types) {
+    const paySelect = document.getElementById('paymentType');
+    paySelect.innerHTML = '<option value="">-- เลือกรายการ --</option>';
+    const pubFilter = document.getElementById('publicChartFilter');
+    let pubHtml = '<option value="all">-- รวมทุกรายการ (จ่ายอย่างน้อย 1 รายการ) --</option>';
+    
+    types.forEach(type => {
+        paySelect.innerHTML += `<option value="${type}">${type}</option>`;
+        pubHtml += `<option value="${type}">${type}</option>`;
+    });
+    pubFilter.innerHTML = pubHtml;
+}
+
+function autoFillName() {
+    const id = document.getElementById('studentId').value;
+    const student = dashboardData.students.find(s => s.id === id);
+    document.getElementById('studentName').value = student ? student.name : '';
+}
+
+function previewFileName() {
+    const file = document.getElementById('slipFile').files[0];
+    if(file) document.getElementById('fileNameDisplay').innerText = "ไฟล์ที่เลือก : " + file.name;
+}
+
+function renderPublicChart() {
+    const filterVal = document.getElementById('publicChartFilter').value;
+    let total = dashboardData.students.length;
+    let paidCount = 0;
+    
+    dashboardData.students.forEach(student => {
+        let hasPaid = false;
+        if (filterVal === 'all') {
+            hasPaid = dashboardData.records.some(r => r.id === student.id);
+        } else {
+            hasPaid = dashboardData.records.some(r => r.id === student.id && r.type === filterVal);
+        }
+        if(hasPaid) paidCount++;
+    });
+    let unpaidCount = total - paidCount;
+    
+    document.getElementById('publicPaid').innerText = paidCount;
+    document.getElementById('publicUnpaid').innerText = unpaidCount;
+    
+    const ctx = document.getElementById('publicPaymentChart').getContext('2d');
+    if (publicChartInstance) publicChartInstance.destroy();
+    publicChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: { labels: ['ชำระแล้ว', 'ค้างชำระ'], datasets: [{ data: [paidCount, unpaidCount], backgroundColor: ['#1cc88a', '#e74a3b'], borderWidth: 2, hoverOffset: 6 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Kanit' }}}} }
+    });
+}
+
+// อัปโหลดไฟล์และบันทึกข้อมูลลง Supabase
+async function handleFormSubmit(e) {
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn');
+    const fileInput = document.getElementById('slipFile').files[0];
+    if(!fileInput) return Swal.fire('แจ้งเตือน', 'กรุณาแนบสลิป', 'warning');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> กำลังบันทึก...';
+    
+    const studentId = document.getElementById('studentId').value;
+    const studentName = document.getElementById('studentName').value;
+    const paymentType = document.getElementById('paymentType').value;
+    
+    try {
+        // 1. อัปโหลดรูปไปที่ Bucket ชื่อ 'slips'
+        const fileExt = fileInput.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        
+        const { data: uploadData, error: uploadError } = await supabaseClient.storage
+            .from('slips')
+            .upload(fileName, fileInput);
+            
+        if (uploadError) throw uploadError;
+        
+        // 2. ดึง URL ของรูปภาพ
+        const { data: urlData } = supabaseClient.storage.from('slips').getPublicUrl(fileName);
+        const slipUrl = urlData.publicUrl;
+        
+        // 3. บันทึกข้อมูลลงตาราง payments
+        const { error: dbError } = await supabaseClient.from('payments').insert([{
+            student_id: studentId,
+            student_name: studentName,
+            payment_type: paymentType,
+            file_name: fileInput.name,
+            file_path: slipUrl
+        }]);
+        
+        if (dbError) throw dbError;
+        
+        // สำเร็จ
+        btn.disabled = false;
+        btn.innerHTML = 'บันทึกข้อมูล';
+        Swal.fire('สำเร็จ', 'บันทึกการชำระเงินเรียบร้อยแล้ว', 'success');
+        document.getElementById('paymentForm').reset();
+        document.getElementById('fileNameDisplay').innerText = '';
+        
+        dashboardData.records.push({ id: studentId, type: paymentType });
+        renderPublicChart();
+        
+    } catch(err) {
+        btn.disabled = false;
+        btn.innerHTML = 'บันทึกข้อมูล';
+        Swal.fire('ข้อผิดพลาด', err.message, 'error');
+    }
+}
+
+// --- แอดมิน ---
+function loginAdmin() {
+    const pass = document.getElementById('adminPass').value;
+    // ฝั่ง Frontend แบบ Static จะใช้รหัสตรงนี้ (2260)
+    if(pass === '2260') {
+        Swal.fire({ icon: 'success', title: 'ยินดีต้อนรับ', timer: 1000, showConfirmButton: false });
+        document.getElementById('loginArea').style.display = 'none';
+        document.getElementById('adminPanel').style.display = 'block';
+        loadDashboard();
+    } else {
+        Swal.fire('รหัสผ่านผิด', 'กรุณาลองอีกครั้ง', 'error');
+    }
+}
+
+// โหลดข้อมูลเพื่อวาดตารางหน้าแดชบอร์ดแอดมิน
+async function loadDashboard() {
+    document.getElementById('dashTableBody').innerHTML = '<tr><td colspan="3" class="text-center py-4"><div class="spinner-border text-primary"></div></td></tr>';
+    await loadPublicInitialData(); // โหลดข้อมูลล่าสุด
+    
+    let filterHtml = '<option value="all">-- รวมทุกรายการ (จ่ายอย่างน้อย 1 รายการ) --</option>';
+    dashboardData.types.forEach(t => filterHtml += `<option value="${t}">${t}</option>`);
+    document.getElementById('dashTypeFilter').innerHTML = filterHtml;
+    
+    renderAdminDashboard();
+}
+
+function renderAdminDashboard() {
+    const tbody = document.getElementById('dashTableBody');
+    const filterVal = document.getElementById('dashTypeFilter').value;
+    let total = dashboardData.students.length;
+    let paidCount = 0;
+    let tableHtml = '';
+    
+    dashboardData.students.forEach(student => {
+        let hasPaid = false;
+        if (filterVal === 'all') {
+            hasPaid = dashboardData.records.some(r => r.id === student.id);
+        } else {
+            hasPaid = dashboardData.records.some(r => r.id === student.id && r.type === filterVal);
+        }
+        if (hasPaid) paidCount++;
+        
+        let statusBadge = hasPaid ? '<span class="badge badge-status bg-success"><i class="fa-solid fa-check"></i> ชำระแล้ว</span>' : '<span class="badge badge-status bg-danger"><i class="fa-solid fa-xmark"></i> ค้างชำระ</span>';
+        let rowClass = hasPaid ? '' : 'table-danger bg-opacity-10 text-danger';
+        
+        tableHtml += `<tr class="${rowClass}">
+            <td class="fw-bold">${student.id}</td>
+            <td>${student.name}</td>
+            <td class="text-center">${statusBadge}</td>
+        </tr>`;
+    });
+    
+    let unpaidCount = total - paidCount;
+    document.getElementById('dashTotal').innerText = total;
+    document.getElementById('dashPaid').innerText = paidCount;
+    document.getElementById('dashUnpaid').innerText = unpaidCount;
+    tbody.innerHTML = tableHtml || '<tr><td colspan="3" class="text-center">ไม่พบข้อมูลนักศึกษา</td></tr>';
+    
+    const ctx = document.getElementById('adminPaymentChart').getContext('2d');
+    if (adminChartInstance) adminChartInstance.destroy();
+    adminChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: { labels: ['ชำระแล้ว', 'ค้างชำระ'], datasets: [{ data: [paidCount, unpaidCount], backgroundColor: ['#1cc88a', '#e74a3b'], borderWidth: 2}] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Kanit' }}}}}
+    });
+}
+
+// ----- ระบบจัดการข้อมูลนักศึกษา (CRUD & Import) -----
+function loadStudentsAdmin() {
+    document.getElementById('adminStudentsTableBody').innerHTML = '<tr><td colspan="3" class="text-center py-4"><div class="spinner-border text-primary"></div></td></tr>';
+    
+    let html = '';
+    if(dashboardData.students.length === 0) html = '<tr><td colspan="3" class="text-center text-muted">ไม่มีข้อมูลนักศึกษา</td></tr>';
+    
+    dashboardData.students.forEach(s => {
+        html += `<tr>
+            <td class="fw-bold text-primary">${s.id}</td>
+            <td>${s.name}</td>
+            <td class="text-center">
+                <button class="btn btn-sm btn-warning me-1" onclick="editStudent('${s.id}', '${s.name}')"><i class="fa-solid fa-pen"></i> แก้ไข</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteStudent('${s.id}')"><i class="fa-solid fa-trash"></i> ลบ</button>
+            </td>
+        </tr>`;
+    });
+    document.getElementById('adminStudentsTableBody').innerHTML = html;
+}
+
+function addStudentForm() {
+    Swal.fire({
+        title: 'เพิ่มรายชื่อนักศึกษา',
+        html: `<input id="swal-input-id" class="form-control mb-3" placeholder="รหัสนักศึกษา"><input id="swal-input-name" class="form-control" placeholder="ชื่อ-นามสกุล">`,
+        focusConfirm: false, showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
+        preConfirm: () => {
+            const id = document.getElementById('swal-input-id').value;
+            const name = document.getElementById('swal-input-name').value;
+            if (!id || !name) { Swal.showValidationMessage('กรุณากรอกข้อมูลให้ครบถ้วน'); return false; }
+            return { id, name }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) saveStudent(result.value.id, result.value.name);
+    });
+}
+
+function editStudent(oldId, oldName) {
+    Swal.fire({
+        title: 'แก้ไขข้อมูลนักศึกษา',
+        html: `<input id="swal-input-id" class="form-control mb-3 bg-light" value="${oldId}" disabled><input id="swal-input-name" class="form-control" placeholder="ชื่อ-นามสกุล" value="${oldName}">`,
+        focusConfirm: false, showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
+        preConfirm: () => {
+            const name = document.getElementById('swal-input-name').value;
+            if (!name) { Swal.showValidationMessage('กรุณากรอกชื่อ'); return false; }
+            return { id: oldId, name }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) saveStudent(result.value.id, result.value.name);
+    });
+}
+
+async function saveStudent(id, name) {
+    try {
+        const { error } = await supabaseClient.from('students').upsert({ id: id, name: name });
+        if(error) throw error;
+        Swal.fire('สำเร็จ', 'บันทึกข้อมูลเรียบร้อย', 'success');
+        await loadPublicInitialData(); 
+        loadStudentsAdmin();
+    } catch(err) {
+        Swal.fire('ข้อผิดพลาด', err.message, 'error');
+    }
+}
+
+async function deleteStudent(id) {
+    Swal.fire({
+        title: 'ยืนยันการลบ?',
+        text: "หากลบข้อมูลนี้ ประวัติการชำระเงินของนักศึกษานี้จะถูกลบไปด้วย!",
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'ใช่, ลบเลย', cancelButtonText: 'ยกเลิก'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            try {
+                const { error } = await supabaseClient.from('students').delete().eq('id', id);
+                if(error) throw error;
+                Swal.fire('ลบแล้ว!', 'ข้อมูลถูกลบเรียบร้อย', 'success'); 
+                await loadPublicInitialData();
+                loadStudentsAdmin(); 
+            } catch(err) {
+                Swal.fire('ข้อผิดพลาด', err.message, 'error');
+            }
+        }
+    });
+}
+
+function importExcel(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async function(evt) {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const excelRows = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+        
+        let studentsToImport = [];
+        excelRows.forEach(row => {
+            if (row.length >= 2 && row[0] && row[1]) {
+                studentsToImport.push({ id: String(row[0]).trim(), name: String(row[1]).trim() });
+            }
+        });
+
+        if(studentsToImport.length > 0) {
+            Swal.fire({ title: 'กำลังนำเข้าข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            try {
+                const { error } = await supabaseClient.from('students').upsert(studentsToImport);
+                if(error) throw error;
+                Swal.fire('สำเร็จ', `นำเข้าข้อมูลจำนวน ${studentsToImport.length} รายการ เรียบร้อยแล้ว`, 'success');
+                await loadPublicInitialData();
+                loadStudentsAdmin();
+            } catch(err) {
+                Swal.fire('ข้อผิดพลาด', err.message, 'error');
+            }
+        } else {
+            Swal.fire('แจ้งเตือน', 'ไม่พบข้อมูล หรือรูปแบบคอลัมน์ไม่ถูกต้อง (ต้องมีคอลัมน์ A=รหัส, B=ชื่อ)', 'warning');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = ''; 
+}
+
+// ----- ตรวจสอบสลิป -----
+function formatDateToTH(isoString) {
+    const d = new Date(isoString);
+    return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
+}
+
+async function loadRecords() {
+    document.getElementById('recordsTableBody').innerHTML = '<tr><td colspan="5" class="text-center">กำลังโหลดข้อมูล...</td></tr>';
+    try {
+        const { data, error } = await supabaseClient.from('payments').select('*').order('created_at', { ascending: false });
+        if(error) throw error;
+        allRecordsData = data || [];
+        
+        const types = [...new Set(allRecordsData.map(row => row.payment_type))];
+        let filterHtml = '<option value="all">-- แสดงทั้งหมด --</option>';
+        types.forEach(t => filterHtml += `<option value="${t}">${t}</option>`);
+        document.getElementById('filterPaymentType').innerHTML = filterHtml;
+        
+        renderRecordsTable();
+    } catch(err) {
+        document.getElementById('recordsTableBody').innerHTML = `<tr><td colspan="5" class="text-center text-danger">${err.message}</td></tr>`;
+    }
+}
+
+function renderRecordsTable() {
+    const filterVal = document.getElementById('filterPaymentType').value;
+    const tbody = document.getElementById('recordsTableBody');
+    let filteredData = (filterVal === 'all') ? allRecordsData : allRecordsData.filter(row => row.payment_type === filterVal);
+    
+    if (filteredData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">ไม่พบประวัติการโอนเงิน</td></tr>';
+        return;
+    }
+    
+    let html = '';
+    filteredData.forEach(row => {
+        let slipUrl = row.file_path ? row.file_path : '';
+        let link = slipUrl ? `
+            <div class="d-flex align-items-center">
+                <div class="slip-wrapper me-2">
+                    <img src="${slipUrl}" class="slip-thumb" alt="Slip Thumbnail">
+                    <img src="${slipUrl}" class="slip-large" alt="Slip Large">
+                </div>
+                <a href="${slipUrl}" target="_blank" class="btn btn-sm btn-primary rounded-pill"><i class="fa-solid fa-eye"></i> ดูสลิป</a>
+            </div>
+        ` : '-';
+
+        html += `<tr>
+            <td class="text-nowrap small">${formatDateToTH(row.created_at)}</td>
+            <td>${row.student_id}</td>
+            <td>${row.student_name}</td>
+            <td><span class="badge bg-secondary">${row.payment_type}</span></td>
+            <td>${link}</td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+// ----- ตั้งค่ารายการชำระเงิน -----
+async function loadTypesAdmin() {
+    const adminList = document.getElementById('adminTypeList');
+    adminList.innerHTML = '';
+    dashboardData.types.forEach(type => {
+        adminList.innerHTML += `<li class="list-group-item d-flex justify-content-between align-items-center"><span class="badge bg-light text-dark border p-2">${type}</span></li>`;
+    });
+}
+
+async function addType() {
+    const newType = document.getElementById('newPaymentType').value.trim();
+    if(!newType) return;
+    Swal.fire({ title: 'กำลังเพิ่ม...', didOpen: () => Swal.showLoading() });
+    
+    try {
+        const { error } = await supabaseClient.from('payment_types').insert([{ type_name: newType }]);
+        // If error code is 23505 (unique violation), it means type exists, we ignore or alert
+        if(error && error.code !== '23505') throw error;
+        
+        await loadPublicInitialData();
+        loadTypesAdmin();
+        document.getElementById('newPaymentType').value = '';
+        Swal.close();
+    } catch(err) {
+        Swal.fire('ข้อผิดพลาด', err.message, 'error');
+    }
+}
+
+// ----- ระบบสร้างรายงานสรุป Export PDF / Excel -----
+function exportExcelReport() {
+    const filterVal = document.getElementById('dashTypeFilter').value;
+    const typeLabel = filterVal === 'all' ? 'รวมทุกรายการ' : filterVal;
+    
+    let reportData = [];
+    reportData.push(["รายงานสรุปสถานะการชำระเงิน"]);
+    reportData.push(["รายการที่ชำระ: " + typeLabel]);
+    reportData.push(["วันที่ออกรายงาน: " + new Date().toLocaleDateString('th-TH')]);
+    reportData.push([]);
+    reportData.push(["ลำดับ", "รหัสนักศึกษา", "ชื่อ-สกุล", "สถานะการชำระเงิน"]);
+    
+    let paid = 0, unpaid = 0;
+    
+    dashboardData.students.forEach((student, index) => {
+        let hasPaid = false;
+        if (filterVal === 'all') {
+            hasPaid = dashboardData.records.some(r => r.id === student.id);
+        } else {
+            hasPaid = dashboardData.records.some(r => r.id === student.id && r.type === filterVal);
+        }
+        if(hasPaid) paid++; else unpaid++;
+        
+        reportData.push([ index + 1, student.id, student.name, hasPaid ? 'ชำระแล้ว' : 'ค้างชำระ' ]);
+    });
+    
+    reportData.push([]);
+    reportData.push(["สรุปภาพรวม"]);
+    reportData.push(["จำนวนนักศึกษาทั้งหมด", dashboardData.students.length, "คน"]);
+    reportData.push(["ชำระแล้ว", paid, "คน"]);
+    reportData.push(["ค้างชำระ", unpaid, "คน"]);
+    
+    const ws = XLSX.utils.aoa_to_sheet(reportData);
+    ws['!cols'] = [{wch: 8}, {wch: 15}, {wch: 35}, {wch: 15}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, "Payment_Report.xlsx");
+}
+
+function exportPDFReport() {
+    const filterVal = document.getElementById('dashTypeFilter').value;
+    const typeLabel = filterVal === 'all' ? 'รวมทุกรายการ' : filterVal;
+    
+    Swal.fire({ title: 'กำลังสร้างเอกสาร PDF...', didOpen: () => Swal.showLoading() });
+
+    let paid = 0, unpaid = 0;
+    let trHtml = '';
+    
+    dashboardData.students.forEach((student, index) => {
+        let hasPaid = false;
+        if (filterVal === 'all') {
+            hasPaid = dashboardData.records.some(r => r.id === student.id);
+        } else {
+            hasPaid = dashboardData.records.some(r => r.id === student.id && r.type === filterVal);
+        }
+        if(hasPaid) paid++; else unpaid++;
+        
+        let statusText = hasPaid ? 'ชำระแล้ว' : 'ค้างชำระ';
+        let statusColor = hasPaid ? '#198754' : '#dc3545';
+        
+        trHtml += `
+            <tr>
+                <td style="border: 1px solid black; padding: 6px; text-align: center;">${index + 1}</td>
+                <td style="border: 1px solid black; padding: 6px; text-align: center;">${student.id}</td>
+                <td style="border: 1px solid black; padding: 6px;">${student.name}</td>
+                <td style="border: 1px solid black; padding: 6px; text-align: center; color: ${statusColor};">${statusText}</td>
+            </tr>
+        `;
+    });
+    
+    const printDiv = document.createElement('div');
+    printDiv.innerHTML = `
+        <div style="font-family: 'Sarabun', sans-serif; padding: 40px; background: white; color: black; width: 800px;">
+            <div style="text-align: center; margin-bottom: 25px;">
+                <h2 style="font-weight: 600; font-size: 26px; margin-bottom: 10px;">รายงานสรุปสถานะการชำระเงิน</h2>
+                <p style="font-size: 18px; margin: 0;">รายการ: ${typeLabel}</p>
+            </div>
+            
+            <table style="width: 100%; border-collapse: collapse; font-size: 16px; margin-bottom: 25px;">
+                <thead>
+                    <tr style="background-color: #f2f2f2;">
+                        <th style="border: 1px solid black; padding: 10px; text-align: center; width: 10%;">ลำดับ</th>
+                        <th style="border: 1px solid black; padding: 10px; text-align: center; width: 25%;">รหัสนักศึกษา</th>
+                        <th style="border: 1px solid black; padding: 10px; text-align: center; width: 45%;">ชื่อ-สกุล</th>
+                        <th style="border: 1px solid black; padding: 10px; text-align: center; width: 20%;">สถานะ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${trHtml}
+                </tbody>
+            </table>
+            
+            <div style="margin-bottom: 25px; font-size: 16px;">
+                <strong>สรุปภาพรวม:</strong> ทั้งหมด ${dashboardData.students.length} คน &nbsp;&nbsp;|&nbsp;&nbsp;
+                <span style="color: #198754;">ชำระแล้ว ${paid} คน</span> &nbsp;&nbsp;|&nbsp;&nbsp;
+                <span style="color: #dc3545;">ค้างชำระ ${unpaid} คน</span>
+            </div>
+            
+            <div style="margin-top: 60px; text-align: right; font-size: 16px;">
+                <p style="margin: 0 0 10px 0;">ลงชื่อ.......................................................</p>
+                <p style="margin: 0 0 10px 0; padding-right: 40px;">(ผู้รับรองรายงาน)</p>
+                <p style="margin: 0;">วันที่ ${new Date().toLocaleDateString('th-TH')}</p>
+            </div>
+        </div>
+    `;
+    
+    var opt = { margin: [0.5, 0.5, 0.5, 0.5], filename: 'Payment_Report.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'in', format: 'A4', orientation: 'portrait' } };
+    html2pdf().set(opt).from(printDiv).save().then(() => { Swal.close(); });
+}
+</script>
+</body>
+</html>
