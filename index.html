@@ -797,6 +797,10 @@ function exportPDFReport() {
     let paid = 0, unpaid = 0;
     let trHtml = '';
     
+    // แบ่งข้อมูลออกเป็น 2 คอลัมน์ (ซ้าย/ขวา) ถ้านักศึกษามีเยอะ
+    // เพื่อให้พอดีกับกระดาษ A4 ในหน้าเดียว
+    let studentRows = [];
+    
     dashboardData.students.forEach((student, index) => {
         let hasPaid = false;
         if (filterVal === 'all') {
@@ -809,61 +813,96 @@ function exportPDFReport() {
         let statusText = hasPaid ? 'ชำระแล้ว' : 'ค้างชำระ';
         let statusColor = hasPaid ? '#198754' : '#dc3545';
         
-        trHtml += `
-            <tr style="page-break-inside: avoid;">
-                <td style="border: 1px solid black; padding: 6px; text-align: center;">${index + 1}</td>
-                <td style="border: 1px solid black; padding: 6px; text-align: center;">${student.id}</td>
-                <td style="border: 1px solid black; padding: 6px;">${student.name}</td>
-                <td style="border: 1px solid black; padding: 6px; text-align: center; color: ${statusColor}; font-weight: 500;">${statusText}</td>
+        studentRows.push(`
+            <tr style="height: 18px;">
+                <td style="border: 1px solid #ddd; padding: 2px 4px; text-align: center;">${index + 1}</td>
+                <td style="border: 1px solid #ddd; padding: 2px 4px; text-align: center;">${student.id}</td>
+                <td style="border: 1px solid #ddd; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;">${student.name}</td>
+                <td style="border: 1px solid #ddd; padding: 2px 4px; text-align: center; color: ${statusColor};">${statusText}</td>
             </tr>
-        `;
+        `);
     });
-    
-    const printDiv = document.createElement('div');
-    // ปรับเปลี่ยน CSS ให้พอดีกับหน้ากระดาษ A4 โดยการใช้ Width: 100% แทนการกำหนด Pixel ตายตัว
-    printDiv.innerHTML = `
-        <div style="font-family: 'Sarabun', sans-serif; background: white; color: black; width: 100%;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <h2 style="font-weight: 600; font-size: 24px; margin-bottom: 5px;">รายงานสรุปสถานะการชำระเงิน</h2>
-                <p style="font-size: 16px; margin: 0;">รายการ: ${typeLabel}</p>
+
+    // ถ้าข้อมูลเยอะกว่า 22 คน (ประมาณครึ่งหน้า) ให้แบ่ง 2 ตาราง
+    let useTwoColumns = studentRows.length > 22;
+    let tableHtml = '';
+
+    if (useTwoColumns) {
+        let mid = Math.ceil(studentRows.length / 2);
+        let col1 = studentRows.slice(0, mid).join('');
+        let col2 = studentRows.slice(mid).join('');
+        
+        tableHtml = `
+            <div style="display: flex; gap: 10px;">
+                <table style="width: 49%; border-collapse: collapse; font-size: 11px;">
+                    <thead>
+                        <tr style="background-color: #f2f2f2;">
+                            <th style="border: 1px solid #ddd; padding: 4px; width: 10%;">ที่</th>
+                            <th style="border: 1px solid #ddd; padding: 4px; width: 25%;">รหัส</th>
+                            <th style="border: 1px solid #ddd; padding: 4px; width: 45%;">ชื่อ-สกุล</th>
+                            <th style="border: 1px solid #ddd; padding: 4px; width: 20%;">สถานะ</th>
+                        </tr>
+                    </thead>
+                    <tbody>${col1}</tbody>
+                </table>
+                <table style="width: 49%; border-collapse: collapse; font-size: 11px;">
+                    <thead>
+                        <tr style="background-color: #f2f2f2;">
+                            <th style="border: 1px solid #ddd; padding: 4px; width: 10%;">ที่</th>
+                            <th style="border: 1px solid #ddd; padding: 4px; width: 25%;">รหัส</th>
+                            <th style="border: 1px solid #ddd; padding: 4px; width: 45%;">ชื่อ-สกุล</th>
+                            <th style="border: 1px solid #ddd; padding: 4px; width: 20%;">สถานะ</th>
+                        </tr>
+                    </thead>
+                    <tbody>${col2}</tbody>
+                </table>
             </div>
-            
-            <table style="width: 100%; border-collapse: collapse; font-size: 15px; margin-bottom: 20px;">
+        `;
+    } else {
+        tableHtml = `
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px;">
                 <thead>
-                    <tr style="background-color: #f2f2f2; page-break-inside: avoid;">
-                        <th style="border: 1px solid black; padding: 8px; text-align: center; width: 10%;">ลำดับ</th>
-                        <th style="border: 1px solid black; padding: 8px; text-align: center; width: 25%;">รหัสนักศึกษา</th>
-                        <th style="border: 1px solid black; padding: 8px; text-align: center; width: 45%;">ชื่อ-สกุล</th>
-                        <th style="border: 1px solid black; padding: 8px; text-align: center; width: 20%;">สถานะ</th>
+                    <tr style="background-color: #f2f2f2;">
+                        <th style="border: 1px solid #ddd; padding: 6px; text-align: center; width: 10%;">ลำดับ</th>
+                        <th style="border: 1px solid #ddd; padding: 6px; text-align: center; width: 25%;">รหัสนักศึกษา</th>
+                        <th style="border: 1px solid #ddd; padding: 6px; text-align: center; width: 45%;">ชื่อ-สกุล</th>
+                        <th style="border: 1px solid #ddd; padding: 6px; text-align: center; width: 20%;">สถานะ</th>
                     </tr>
                 </thead>
-                <tbody>
-                    ${trHtml}
-                </tbody>
+                <tbody>${studentRows.join('')}</tbody>
             </table>
+        `;
+    }
+    
+    const printDiv = document.createElement('div');
+    printDiv.innerHTML = `
+        <div style="font-family: 'Sarabun', sans-serif; background: white; color: black; width: 100%;">
+            <div style="text-align: center; margin-bottom: 10px;">
+                <h2 style="font-weight: 600; font-size: 20px; margin-bottom: 2px;">รายงานสรุปสถานะการชำระเงิน</h2>
+                <p style="font-size: 14px; margin: 0;">รายการ: ${typeLabel} | วันที่ ${new Date().toLocaleDateString('th-TH')}</p>
+            </div>
             
-            <div style="margin-bottom: 20px; font-size: 15px; page-break-inside: avoid;">
+            ${tableHtml}
+            
+            <div style="margin-top: 10px; padding-top: 5px; border-top: 1px solid #ddd; font-size: 13px;">
                 <strong>สรุปภาพรวม:</strong> ทั้งหมด ${dashboardData.students.length} คน &nbsp;&nbsp;|&nbsp;&nbsp;
                 <span style="color: #198754;">ชำระแล้ว ${paid} คน</span> &nbsp;&nbsp;|&nbsp;&nbsp;
                 <span style="color: #dc3545;">ค้างชำระ ${unpaid} คน</span>
             </div>
             
-            <div style="margin-top: 40px; text-align: right; font-size: 15px; page-break-inside: avoid;">
-                <p style="margin: 0 0 10px 0;">ลงชื่อ.......................................................</p>
-                <p style="margin: 0 0 10px 0; padding-right: 40px;">(ผู้รับรองรายงาน)</p>
-                <p style="margin: 0;">วันที่ ${new Date().toLocaleDateString('th-TH')}</p>
+            <div style="margin-top: 25px; text-align: right; font-size: 13px;">
+                <p style="margin: 0 0 5px 0;">ลงชื่อ.......................................................</p>
+                <p style="margin: 0 0 0 0; padding-right: 40px;">(ผู้รับรองรายงาน)</p>
             </div>
         </div>
     `;
     
-    // ตั้งค่าระยะขอบให้ได้สัดส่วน A4 พอดี
     var opt = { 
-        margin: [15, 12, 15, 12], // mm [บน, ขวา, ล่าง, ซ้าย]
+        margin: [10, 10, 10, 10], // mm [บน, ขวา, ล่าง, ซ้าย] ขอบเล็กลงเพื่อให้จุคนได้เยอะ
         filename: 'Payment_Report.pdf', 
         image: { type: 'jpeg', quality: 0.98 }, 
         html2canvas: { scale: 2 }, 
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] }
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
     
     html2pdf().set(opt).from(printDiv).save().then(() => { Swal.close(); });
