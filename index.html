@@ -40,7 +40,7 @@ body { font-family: 'Kanit', sans-serif; background-color: #f4f7f6; }
 </head>
 <body>
 <div class="container py-4">
-<h3 class="text-center text-primary mb-4 fw-bold">ระบบแจ้งชำระเงินค่าเทอม อื่นๆ</h3>
+<h3 class="text-center text-primary mb-4 fw-bold">ระบบชำระเงินนักศึกษา (GitHub Pages + Supabase)</h3>
 <div class="card p-3 p-md-4">
 <!-- Tabs -->
 <ul class="nav nav-tabs mb-4" id="mainTab" role="tablist">
@@ -247,7 +247,8 @@ body { font-family: 'Kanit', sans-serif; background-color: #f4f7f6; }
 </table>
 </div>
 </div>
-<!-- 2.3 ตั้งค่า -->
+
+<!-- 2.3 ตั้งค่ารายการ -->
 <div class="tab-pane fade" id="manageTypes">
 <div class="input-group mb-3 shadow-sm">
 <input type="text" id="newPaymentType" class="form-control" placeholder="ชื่อรายการ เช่น ค่าเสื้อผ้า" >
@@ -792,12 +793,19 @@ async function bulkDeleteRecords() {
 }
 
 
-// ----- ตั้งค่ารายการชำระเงิน -----
+// ----- ตั้งค่ารายการชำระเงิน (เพิ่มฟังก์ชันลบ/แก้ไข) -----
 async function loadTypesAdmin() {
     const adminList = document.getElementById('adminTypeList');
     adminList.innerHTML = '';
     dashboardData.types.forEach(type => {
-        adminList.innerHTML += `<li class="list-group-item d-flex justify-content-between align-items-center"><span class="badge bg-light text-dark border p-2">${type}</span></li>`;
+        adminList.innerHTML += `
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span class="badge bg-light text-dark border p-2 fs-6">${type}</span>
+            <div>
+                <button class="btn btn-sm btn-warning me-1" onclick="editType('${type}')"><i class="fa-solid fa-pen"></i> แก้ไข</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteType('${type}')"><i class="fa-solid fa-trash"></i> ลบ</button>
+            </div>
+        </li>`;
     });
 }
 
@@ -818,6 +826,71 @@ async function addType() {
     } catch(err) {
         Swal.fire('ข้อผิดพลาด', err.message, 'error');
     }
+}
+
+function editType(oldType) {
+    Swal.fire({
+        title: 'แก้ไขชื่อรายการ',
+        input: 'text',
+        inputValue: oldType,
+        showCancelButton: true,
+        confirmButtonText: 'บันทึก',
+        cancelButtonText: 'ยกเลิก',
+        inputValidator: (value) => {
+            if (!value) return 'กรุณาระบุชื่อรายการ!';
+            if (value === oldType) return 'ชื่อซ้ำกับของเดิม';
+        }
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            const newType = result.value.trim();
+            try {
+                Swal.fire({ title: 'กำลังบันทึก...', didOpen: () => Swal.showLoading() });
+                
+                const { error } = await supabaseClient.from('payment_types')
+                    .update({ type_name: newType })
+                    .eq('type_name', oldType);
+                    
+                if(error) throw error;
+                
+                await loadPublicInitialData();
+                loadTypesAdmin();
+                Swal.fire('สำเร็จ', 'แก้ไขรายการเรียบร้อย', 'success');
+            } catch(err) {
+                Swal.fire('ข้อผิดพลาด', 'ไม่สามารถแก้ไขได้ (' + err.message + ')', 'error');
+            }
+        }
+    });
+}
+
+function deleteType(typeName) {
+    Swal.fire({
+        title: 'ยืนยันการลบ?',
+        text: `ต้องการลบรายการ "${typeName}" ใช่หรือไม่?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'ใช่, ลบเลย',
+        cancelButtonText: 'ยกเลิก'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            try {
+                Swal.fire({ title: 'กำลังลบ...', didOpen: () => Swal.showLoading() });
+                
+                const { error } = await supabaseClient.from('payment_types')
+                    .delete()
+                    .eq('type_name', typeName);
+                    
+                if(error) throw error;
+                
+                await loadPublicInitialData();
+                loadTypesAdmin();
+                Swal.fire('ลบแล้ว!', 'รายการถูกลบเรียบร้อย', 'success');
+            } catch(err) {
+                // หากลบไม่ได้ ส่วนใหญ่มักติดเรื่องข้อมูลถูกอ้างอิงอยู่ (Foreign Key)
+                Swal.fire('ข้อผิดพลาด', 'ไม่สามารถลบได้ อาจมีข้อมูลประวัติที่ใช้รายการนี้อยู่ (' + err.message + ')', 'error');
+            }
+        }
+    });
 }
 
 // ----- ระบบสร้างรายงานสรุป Export PDF / Excel -----
