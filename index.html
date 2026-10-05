@@ -110,6 +110,7 @@ body { font-family: 'Kanit', sans-serif; background-color: #f4f7f6; }
 <small class="text-muted fw-bold">ค้างชำระ (คน)</small>
 </div>
 </div>
+<div class="text-muted small mt-3 w-100 text-center"><i class="fa-solid fa-hand-pointer"></i> คลิกที่กราฟเพื่อดูรายชื่อ</div>
 </div>
 </div>
 </div>
@@ -176,6 +177,7 @@ body { font-family: 'Kanit', sans-serif; background-color: #f4f7f6; }
 <div style="position: relative; height: 200px; width: 100%;">
 <canvas id="adminPaymentChart"></canvas>
 </div>
+<div class="text-muted small mt-2"><i class="fa-solid fa-hand-pointer"></i> คลิกที่กราฟเพื่อดูรายชื่อ</div>
 </div>
 </div>
 </div>
@@ -258,7 +260,6 @@ body { font-family: 'Kanit', sans-serif; background-color: #f4f7f6; }
 const SUPABASE_URL = 'https://bshkcwlrbydhldmzbzhz.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_7vXTZvvzE3amITC8brMTnA_UP45CdGi';
 
-
 // สร้าง Client สำหรับคุยกับฐานข้อมูล Supabase
 const { createClient } = supabase;
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -289,7 +290,6 @@ async function loadPublicInitialData() {
         
         dashboardData.students = st || [];
         dashboardData.types = (pt || []).map(p => p.type_name);
-        // แปลง key ให้ตรงกับโค้ดเดิม
         dashboardData.records = (rec || []).map(r => ({id: r.student_id, type: r.payment_type}));
 
         initPage();
@@ -332,6 +332,49 @@ function previewFileName() {
     if(file) document.getElementById('fileNameDisplay').innerText = "ไฟล์ที่เลือก : " + file.name;
 }
 
+// ----------------------------------------------------
+// ฟังก์ชันแสดงรายชื่อเมื่อกดคลิกที่กราฟ
+// ----------------------------------------------------
+function showStudentListFromChart(statusIndex, filterId) {
+    const filterVal = document.getElementById(filterId).value;
+    // statusIndex: 0 = ชำระแล้ว, 1 = ค้างชำระ (ตามลำดับ datasets ใน Chart)
+    const isPaidTarget = (statusIndex === 0);
+    const title = isPaidTarget ? '<span class="text-success"><i class="fa-solid fa-check-circle"></i> รายชื่อผู้ชำระเงินแล้ว</span>' : '<span class="text-danger"><i class="fa-solid fa-times-circle"></i> รายชื่อผู้ค้างชำระ</span>';
+    
+    let filteredStudents = dashboardData.students.filter(student => {
+        let hasPaid = false;
+        if (filterVal === 'all') {
+            hasPaid = dashboardData.records.some(r => r.id === student.id);
+        } else {
+            hasPaid = dashboardData.records.some(r => r.id === student.id && r.type === filterVal);
+        }
+        return hasPaid === isPaidTarget;
+    });
+
+    if (filteredStudents.length === 0) {
+        Swal.fire({ title: title, html: '<p class="mt-3">ไม่มีข้อมูลในหมวดหมู่นี้</p>', icon: 'info' });
+        return;
+    }
+
+    let listHtml = '<div class="table-responsive" style="max-height: 350px; overflow-y: auto;">';
+    listHtml += '<table class="table table-hover table-sm text-start align-middle mt-2">';
+    listHtml += '<thead class="table-light" style="position: sticky; top: 0; z-index: 1;"><tr><th>ลำดับ</th><th>รหัสนักศึกษา</th><th>ชื่อ-นามสกุล</th></tr></thead><tbody>';
+    
+    filteredStudents.forEach((s, i) => {
+        listHtml += `<tr><td>${i+1}</td><td class="fw-bold">${s.id}</td><td>${s.name}</td></tr>`;
+    });
+    listHtml += '</tbody></table></div>';
+
+    Swal.fire({
+        title: title,
+        html: listHtml,
+        width: '600px',
+        showCloseButton: true,
+        confirmButtonText: 'ปิด',
+        confirmButtonColor: '#6c757d'
+    });
+}
+
 function renderPublicChart() {
     const filterVal = document.getElementById('publicChartFilter').value;
     let total = dashboardData.students.length;
@@ -356,7 +399,21 @@ function renderPublicChart() {
     publicChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: { labels: ['ชำระแล้ว', 'ค้างชำระ'], datasets: [{ data: [paidCount, unpaidCount], backgroundColor: ['#1cc88a', '#e74a3b'], borderWidth: 2, hoverOffset: 6 }] },
-        options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Kanit' }}}} }
+        options: { 
+            responsive: true, maintainAspectRatio: false, cutout: '70%', 
+            plugins: { legend: { position: 'bottom', labels: { font: { family: 'Kanit' }}}},
+            // เปลี่ยนเมาส์เป็นรูปมือเวลาชี้
+            onHover: (event, chartElement) => {
+                event.native.target.style.cursor = chartElement.length ? 'pointer' : 'default';
+            },
+            // ดักจับการคลิก
+            onClick: (event, elements) => {
+                if (elements.length > 0) {
+                    const dataIndex = elements[0].index;
+                    showStudentListFromChart(dataIndex, 'publicChartFilter');
+                }
+            }
+        }
     });
 }
 
@@ -375,7 +432,6 @@ async function handleFormSubmit(e) {
     const paymentType = document.getElementById('paymentType').value;
     
     try {
-        // 1. อัปโหลดรูปไปที่ Bucket ชื่อ 'slips'
         const fileExt = fileInput.name.split('.').pop();
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
         
@@ -385,11 +441,9 @@ async function handleFormSubmit(e) {
             
         if (uploadError) throw uploadError;
         
-        // 2. ดึง URL ของรูปภาพ
         const { data: urlData } = supabaseClient.storage.from('slips').getPublicUrl(fileName);
         const slipUrl = urlData.publicUrl;
         
-        // 3. บันทึกข้อมูลลงตาราง payments
         const { error: dbError } = await supabaseClient.from('payments').insert([{
             student_id: studentId,
             student_name: studentName,
@@ -400,7 +454,6 @@ async function handleFormSubmit(e) {
         
         if (dbError) throw dbError;
         
-        // สำเร็จ
         btn.disabled = false;
         btn.innerHTML = 'บันทึกข้อมูล';
         Swal.fire('สำเร็จ', 'บันทึกการชำระเงินเรียบร้อยแล้ว', 'success');
@@ -420,7 +473,6 @@ async function handleFormSubmit(e) {
 // --- แอดมิน ---
 function loginAdmin() {
     const pass = document.getElementById('adminPass').value;
-    // ฝั่ง Frontend แบบ Static จะใช้รหัสตรงนี้ (2260)
     if(pass === '2260') {
         Swal.fire({ icon: 'success', title: 'ยินดีต้อนรับ', timer: 1000, showConfirmButton: false });
         document.getElementById('loginArea').style.display = 'none';
@@ -431,10 +483,9 @@ function loginAdmin() {
     }
 }
 
-// โหลดข้อมูลเพื่อวาดตารางหน้าแดชบอร์ดแอดมิน
 async function loadDashboard() {
     document.getElementById('dashTableBody').innerHTML = '<tr><td colspan="3" class="text-center py-4"><div class="spinner-border text-primary"></div></td></tr>';
-    await loadPublicInitialData(); // โหลดข้อมูลล่าสุด
+    await loadPublicInitialData(); 
     
     let filterHtml = '<option value="all">-- รวมทุกรายการ (จ่ายอย่างน้อย 1 รายการ) --</option>';
     dashboardData.types.forEach(t => filterHtml += `<option value="${t}">${t}</option>`);
@@ -480,7 +531,19 @@ function renderAdminDashboard() {
     adminChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: { labels: ['ชำระแล้ว', 'ค้างชำระ'], datasets: [{ data: [paidCount, unpaidCount], backgroundColor: ['#1cc88a', '#e74a3b'], borderWidth: 2}] },
-        options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Kanit' }}}}}
+        options: { 
+            responsive: true, maintainAspectRatio: false, cutout: '70%', 
+            plugins: { legend: { position: 'bottom', labels: { font: { family: 'Kanit' }}}},
+            onHover: (event, chartElement) => {
+                event.native.target.style.cursor = chartElement.length ? 'pointer' : 'default';
+            },
+            onClick: (event, elements) => {
+                if (elements.length > 0) {
+                    const dataIndex = elements[0].index;
+                    showStudentListFromChart(dataIndex, 'dashTypeFilter');
+                }
+            }
+        }
     });
 }
 
@@ -795,10 +858,7 @@ function exportPDFReport() {
     Swal.fire({ title: 'กำลังสร้างเอกสาร PDF...', didOpen: () => Swal.showLoading() });
 
     let paid = 0, unpaid = 0;
-    let trHtml = '';
     
-    // แบ่งข้อมูลออกเป็น 2 คอลัมน์ (ซ้าย/ขวา) ถ้านักศึกษามีเยอะ
-    // เพื่อให้พอดีกับกระดาษ A4 ในหน้าเดียว
     let studentRows = [];
     
     dashboardData.students.forEach((student, index) => {
@@ -823,7 +883,6 @@ function exportPDFReport() {
         `);
     });
 
-    // ถ้าข้อมูลเยอะกว่า 22 คน (ประมาณครึ่งหน้า) ให้แบ่ง 2 ตาราง
     let useTwoColumns = studentRows.length > 22;
     let tableHtml = '';
 
@@ -898,7 +957,7 @@ function exportPDFReport() {
     `;
     
     var opt = { 
-        margin: [10, 10, 10, 10], // mm [บน, ขวา, ล่าง, ซ้าย] ขอบเล็กลงเพื่อให้จุคนได้เยอะ
+        margin: [10, 10, 10, 10], 
         filename: 'Payment_Report.pdf', 
         image: { type: 'jpeg', quality: 0.98 }, 
         html2canvas: { scale: 2 }, 
