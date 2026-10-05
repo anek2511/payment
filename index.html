@@ -102,11 +102,15 @@ body { font-family: 'Kanit', sans-serif; background-color: #f4f7f6; }
 </div>
 <div class="mt-4 d-flex w-100 justify-content-evenly text-center border-top pt-3">
 <div>
-<h3 class="fw-bold text-success mb-0" id="publicPaid">0</h3>
-<small class="text-muted fw-bold">ชำระแล้ว (คน) </small>
+<h4 class="fw-bold text-success mb-0" id="publicPaid">0</h4>
+<small class="text-muted fw-bold">ชำระแล้ว (คน)</small>
 </div>
 <div>
-<h3 class="fw-bold text-danger mb-0" id="publicUnpaid">0</h3>
+<h4 class="fw-bold text-warning mb-0" id="publicDeferred">0</h4>
+<small class="text-muted fw-bold">ผ่อนผัน (คน)</small>
+</div>
+<div>
+<h4 class="fw-bold text-danger mb-0" id="publicUnpaid">0</h4>
 <small class="text-muted fw-bold">ค้างชำระ (คน)</small>
 </div>
 </div>
@@ -153,21 +157,27 @@ body { font-family: 'Kanit', sans-serif; background-color: #f4f7f6; }
 <div class="card dash-card bg-gradient-primary p-3 shadow-sm h-100 d-flex flex-row justify-content-between align-items-center">
 <div>
 <h6 class="mb-1 text-white-50"><i class="fa-solid fa-users"></i> จํานวนนักศึกษาทั้งหมด</h6>
-<h1 class="fw-bold mb-0 display-6" id="dashTotal">0</h1>
+<h2 class="fw-bold mb-0 display-6" id="dashTotal">0</h2>
 </div>
 <i class="fa-solid fa-users fa-3x text-white-50 opacity-50"></i>
 </div>
 </div>
-<div class="col-6">
-<div class="card dash-card bg-gradient-success p-3 shadow-sm h-100 text-center">
-<h6 class="mb-1 text-white-50"><i class="fa-solid fa-check-circle"></i> ชำระแล้ว</h6>
-<h2 class="fw-bold mb-0" id="dashPaid">0</h2>
+<div class="col-4">
+<div class="card dash-card bg-gradient-success p-2 p-md-3 shadow-sm h-100 text-center">
+<h6 class="mb-1 text-white-50 small"><i class="fa-solid fa-check-circle"></i> ชำระแล้ว</h6>
+<h4 class="fw-bold mb-0 text-white" id="dashPaid">0</h4>
 </div>
 </div>
-<div class="col-6">
-<div class="card dash-card bg-gradient-danger p-3 shadow-sm h-100 text-center">
-<h6 class="mb-1 text-white-50"><i class="fa-solid fa-times-circle"></i> ค้างชำระ</h6>
-<h2 class="fw-bold mb-0" id="dashUnpaid">0</h2>
+<div class="col-4">
+<div class="card dash-card bg-warning p-2 p-md-3 shadow-sm h-100 text-center">
+<h6 class="mb-1 text-dark small"><i class="fa-solid fa-clock"></i> ผ่อนผัน</h6>
+<h4 class="fw-bold mb-0 text-dark" id="dashDeferred">0</h4>
+</div>
+</div>
+<div class="col-4">
+<div class="card dash-card bg-gradient-danger p-2 p-md-3 shadow-sm h-100 text-center">
+<h6 class="mb-1 text-white-50 small"><i class="fa-solid fa-times-circle"></i> ค้างชำระ</h6>
+<h4 class="fw-bold mb-0 text-white" id="dashUnpaid">0</h4>
 </div>
 </div>
 </div>
@@ -333,23 +343,33 @@ function previewFileName() {
 }
 
 // ----------------------------------------------------
-// ฟังก์ชันแสดงรายชื่อเมื่อกดคลิกที่กราฟ
+// ฟังก์ชันคำนวณสถานะ 3 แบบ: paid, deferred, unpaid
 // ----------------------------------------------------
+function getStudentStatus(studentId, filterVal) {
+    let recs = dashboardData.records.filter(r => r.id === studentId);
+    
+    if (filterVal === 'all') {
+        if (recs.length === 0) return 'unpaid';
+        let hasDeferred = recs.some(r => r.type === 'ผ่อนผันค่าเทอม');
+        return hasDeferred ? 'deferred' : 'paid';
+    } else {
+        let specificRec = recs.filter(r => r.type === filterVal);
+        if (specificRec.length === 0) return 'unpaid';
+        if (filterVal === 'ผ่อนผันค่าเทอม') return 'deferred';
+        return 'paid';
+    }
+}
+
 function showStudentListFromChart(statusIndex, filterId) {
     const filterVal = document.getElementById(filterId).value;
-    // statusIndex: 0 = ชำระแล้ว, 1 = ค้างชำระ (ตามลำดับ datasets ใน Chart)
-    const isPaidTarget = (statusIndex === 0);
-    const title = isPaidTarget ? '<span class="text-success"><i class="fa-solid fa-check-circle"></i> รายชื่อผู้ชำระเงินแล้ว</span>' : '<span class="text-danger"><i class="fa-solid fa-times-circle"></i> รายชื่อผู้ค้างชำระ</span>';
+    let targetStatus = statusIndex === 0 ? 'paid' : (statusIndex === 1 ? 'deferred' : 'unpaid');
+    let title = '';
     
-    let filteredStudents = dashboardData.students.filter(student => {
-        let hasPaid = false;
-        if (filterVal === 'all') {
-            hasPaid = dashboardData.records.some(r => r.id === student.id);
-        } else {
-            hasPaid = dashboardData.records.some(r => r.id === student.id && r.type === filterVal);
-        }
-        return hasPaid === isPaidTarget;
-    });
+    if (statusIndex === 0) title = '<span class="text-success"><i class="fa-solid fa-check-circle"></i> รายชื่อผู้ชำระเงินแล้ว</span>';
+    else if (statusIndex === 1) title = '<span class="text-warning"><i class="fa-solid fa-clock"></i> รายชื่อผู้ผ่อนผัน</span>';
+    else title = '<span class="text-danger"><i class="fa-solid fa-times-circle"></i> รายชื่อผู้ค้างชำระ</span>';
+    
+    let filteredStudents = dashboardData.students.filter(student => getStudentStatus(student.id, filterVal) === targetStatus);
 
     if (filteredStudents.length === 0) {
         Swal.fire({ title: title, html: '<p class="mt-3">ไม่มีข้อมูลในหมวดหมู่นี้</p>', icon: 'info' });
@@ -365,53 +385,38 @@ function showStudentListFromChart(statusIndex, filterId) {
     });
     listHtml += '</tbody></table></div>';
 
-    Swal.fire({
-        title: title,
-        html: listHtml,
-        width: '600px',
-        showCloseButton: true,
-        confirmButtonText: 'ปิด',
-        confirmButtonColor: '#6c757d'
-    });
+    Swal.fire({ title: title, html: listHtml, width: '600px', showCloseButton: true, confirmButtonText: 'ปิด', confirmButtonColor: '#6c757d' });
 }
 
 function renderPublicChart() {
     const filterVal = document.getElementById('publicChartFilter').value;
-    let total = dashboardData.students.length;
-    let paidCount = 0;
+    let paidCount = 0, deferredCount = 0, unpaidCount = 0;
     
     dashboardData.students.forEach(student => {
-        let hasPaid = false;
-        if (filterVal === 'all') {
-            hasPaid = dashboardData.records.some(r => r.id === student.id);
-        } else {
-            hasPaid = dashboardData.records.some(r => r.id === student.id && r.type === filterVal);
-        }
-        if(hasPaid) paidCount++;
+        let status = getStudentStatus(student.id, filterVal);
+        if(status === 'paid') paidCount++;
+        else if(status === 'deferred') deferredCount++;
+        else unpaidCount++;
     });
-    let unpaidCount = total - paidCount;
     
     document.getElementById('publicPaid').innerText = paidCount;
+    document.getElementById('publicDeferred').innerText = deferredCount;
     document.getElementById('publicUnpaid').innerText = unpaidCount;
     
     const ctx = document.getElementById('publicPaymentChart').getContext('2d');
     if (publicChartInstance) publicChartInstance.destroy();
     publicChartInstance = new Chart(ctx, {
         type: 'doughnut',
-        data: { labels: ['ชำระแล้ว', 'ค้างชำระ'], datasets: [{ data: [paidCount, unpaidCount], backgroundColor: ['#1cc88a', '#e74a3b'], borderWidth: 2, hoverOffset: 6 }] },
+        data: { 
+            labels: ['ชำระแล้ว', 'ผ่อนผัน', 'ค้างชำระ'], 
+            datasets: [{ data: [paidCount, deferredCount, unpaidCount], backgroundColor: ['#1cc88a', '#ffc107', '#e74a3b'], borderWidth: 2 }] 
+        },
         options: { 
             responsive: true, maintainAspectRatio: false, cutout: '70%', 
             plugins: { legend: { position: 'bottom', labels: { font: { family: 'Kanit' }}}},
-            // เปลี่ยนเมาส์เป็นรูปมือเวลาชี้
-            onHover: (event, chartElement) => {
-                event.native.target.style.cursor = chartElement.length ? 'pointer' : 'default';
-            },
-            // ดักจับการคลิก
+            onHover: (event, chartElement) => { event.native.target.style.cursor = chartElement.length ? 'pointer' : 'default'; },
             onClick: (event, elements) => {
-                if (elements.length > 0) {
-                    const dataIndex = elements[0].index;
-                    showStudentListFromChart(dataIndex, 'publicChartFilter');
-                }
+                if (elements.length > 0) showStudentListFromChart(elements[0].index, 'publicChartFilter');
             }
         }
     });
@@ -498,20 +503,25 @@ function renderAdminDashboard() {
     const tbody = document.getElementById('dashTableBody');
     const filterVal = document.getElementById('dashTypeFilter').value;
     let total = dashboardData.students.length;
-    let paidCount = 0;
+    let paidCount = 0, deferredCount = 0, unpaidCount = 0;
     let tableHtml = '';
     
     dashboardData.students.forEach(student => {
-        let hasPaid = false;
-        if (filterVal === 'all') {
-            hasPaid = dashboardData.records.some(r => r.id === student.id);
-        } else {
-            hasPaid = dashboardData.records.some(r => r.id === student.id && r.type === filterVal);
-        }
-        if (hasPaid) paidCount++;
+        let status = getStudentStatus(student.id, filterVal);
+        let statusBadge = '', rowClass = '';
         
-        let statusBadge = hasPaid ? '<span class="badge badge-status bg-success"><i class="fa-solid fa-check"></i> ชำระแล้ว</span>' : '<span class="badge badge-status bg-danger"><i class="fa-solid fa-xmark"></i> ค้างชำระ</span>';
-        let rowClass = hasPaid ? '' : 'table-danger bg-opacity-10 text-danger';
+        if (status === 'paid') {
+            paidCount++;
+            statusBadge = '<span class="badge badge-status bg-success"><i class="fa-solid fa-check"></i> ชำระแล้ว</span>';
+        } else if (status === 'deferred') {
+            deferredCount++;
+            statusBadge = '<span class="badge badge-status bg-warning text-dark"><i class="fa-solid fa-clock"></i> ผ่อนผัน</span>';
+            rowClass = 'table-warning bg-opacity-25';
+        } else {
+            unpaidCount++;
+            statusBadge = '<span class="badge badge-status bg-danger"><i class="fa-solid fa-xmark"></i> ค้างชำระ</span>';
+            rowClass = 'table-danger bg-opacity-10 text-danger';
+        }
         
         tableHtml += `<tr class="${rowClass}">
             <td class="fw-bold">${student.id}</td>
@@ -520,9 +530,9 @@ function renderAdminDashboard() {
         </tr>`;
     });
     
-    let unpaidCount = total - paidCount;
     document.getElementById('dashTotal').innerText = total;
     document.getElementById('dashPaid').innerText = paidCount;
+    document.getElementById('dashDeferred').innerText = deferredCount;
     document.getElementById('dashUnpaid').innerText = unpaidCount;
     tbody.innerHTML = tableHtml || '<tr><td colspan="3" class="text-center">ไม่พบข้อมูลนักศึกษา</td></tr>';
     
@@ -530,18 +540,16 @@ function renderAdminDashboard() {
     if (adminChartInstance) adminChartInstance.destroy();
     adminChartInstance = new Chart(ctx, {
         type: 'doughnut',
-        data: { labels: ['ชำระแล้ว', 'ค้างชำระ'], datasets: [{ data: [paidCount, unpaidCount], backgroundColor: ['#1cc88a', '#e74a3b'], borderWidth: 2}] },
+        data: { 
+            labels: ['ชำระแล้ว', 'ผ่อนผัน', 'ค้างชำระ'], 
+            datasets: [{ data: [paidCount, deferredCount, unpaidCount], backgroundColor: ['#1cc88a', '#ffc107', '#e74a3b'], borderWidth: 2}] 
+        },
         options: { 
             responsive: true, maintainAspectRatio: false, cutout: '70%', 
             plugins: { legend: { position: 'bottom', labels: { font: { family: 'Kanit' }}}},
-            onHover: (event, chartElement) => {
-                event.native.target.style.cursor = chartElement.length ? 'pointer' : 'default';
-            },
+            onHover: (event, chartElement) => { event.native.target.style.cursor = chartElement.length ? 'pointer' : 'default'; },
             onClick: (event, elements) => {
-                if (elements.length > 0) {
-                    const dataIndex = elements[0].index;
-                    showStudentListFromChart(dataIndex, 'dashTypeFilter');
-                }
+                if (elements.length > 0) showStudentListFromChart(elements[0].index, 'dashTypeFilter');
             }
         }
     });
@@ -824,24 +832,23 @@ function exportExcelReport() {
     reportData.push([]);
     reportData.push(["ลำดับ", "รหัสนักศึกษา", "ชื่อ-สกุล", "สถานะการชำระเงิน"]);
     
-    let paid = 0, unpaid = 0;
+    let paid = 0, deferred = 0, unpaid = 0;
     
     dashboardData.students.forEach((student, index) => {
-        let hasPaid = false;
-        if (filterVal === 'all') {
-            hasPaid = dashboardData.records.some(r => r.id === student.id);
-        } else {
-            hasPaid = dashboardData.records.some(r => r.id === student.id && r.type === filterVal);
-        }
-        if(hasPaid) paid++; else unpaid++;
+        let status = getStudentStatus(student.id, filterVal);
+        let statusText = '';
+        if(status === 'paid') { paid++; statusText = 'ชำระแล้ว'; }
+        else if(status === 'deferred') { deferred++; statusText = 'ผ่อนผัน'; }
+        else { unpaid++; statusText = 'ค้างชำระ'; }
         
-        reportData.push([ index + 1, student.id, student.name, hasPaid ? 'ชำระแล้ว' : 'ค้างชำระ' ]);
+        reportData.push([ index + 1, student.id, student.name, statusText ]);
     });
     
     reportData.push([]);
     reportData.push(["สรุปภาพรวม"]);
     reportData.push(["จำนวนนักศึกษาทั้งหมด", dashboardData.students.length, "คน"]);
     reportData.push(["ชำระแล้ว", paid, "คน"]);
+    reportData.push(["ผ่อนผัน", deferred, "คน"]);
     reportData.push(["ค้างชำระ", unpaid, "คน"]);
     
     const ws = XLSX.utils.aoa_to_sheet(reportData);
@@ -857,21 +864,16 @@ function exportPDFReport() {
     
     Swal.fire({ title: 'กำลังสร้างเอกสาร PDF...', didOpen: () => Swal.showLoading() });
 
-    let paid = 0, unpaid = 0;
+    let paid = 0, deferred = 0, unpaid = 0;
     
     let studentRows = [];
     
     dashboardData.students.forEach((student, index) => {
-        let hasPaid = false;
-        if (filterVal === 'all') {
-            hasPaid = dashboardData.records.some(r => r.id === student.id);
-        } else {
-            hasPaid = dashboardData.records.some(r => r.id === student.id && r.type === filterVal);
-        }
-        if(hasPaid) paid++; else unpaid++;
-        
-        let statusText = hasPaid ? 'ชำระแล้ว' : 'ค้างชำระ';
-        let statusColor = hasPaid ? '#198754' : '#dc3545';
+        let status = getStudentStatus(student.id, filterVal);
+        let statusText = '', statusColor = '';
+        if(status === 'paid') { paid++; statusText = 'ชำระแล้ว'; statusColor = '#198754'; }
+        else if(status === 'deferred') { deferred++; statusText = 'ผ่อนผัน'; statusColor = '#d39e00'; }
+        else { unpaid++; statusText = 'ค้างชำระ'; statusColor = '#dc3545'; }
         
         studentRows.push(`
             <tr style="height: 18px;">
@@ -946,6 +948,7 @@ function exportPDFReport() {
             <div style="margin-top: 10px; padding-top: 5px; border-top: 1px solid #ddd; font-size: 13px;">
                 <strong>สรุปภาพรวม:</strong> ทั้งหมด ${dashboardData.students.length} คน &nbsp;&nbsp;|&nbsp;&nbsp;
                 <span style="color: #198754;">ชำระแล้ว ${paid} คน</span> &nbsp;&nbsp;|&nbsp;&nbsp;
+                <span style="color: #d39e00;">ผ่อนผัน ${deferred} คน</span> &nbsp;&nbsp;|&nbsp;&nbsp;
                 <span style="color: #dc3545;">ค้างชำระ ${unpaid} คน</span>
             </div>
             
